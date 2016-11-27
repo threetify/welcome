@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Spinning globe with Terrorism Attack Locations</title>
+    <script src="./js/d3.min v3.5.17.js" type="text/javascript"></script>
+    <link href="css/spinning_globe_style1.css" rel="stylesheet" type="text/css"/>
+    <link href="css/spinning_globe_style2.css" rel="stylesheet" type="text/css"/>
+    <center>
+    <style>
+    
+        body {background: #252526;}
+
+        h1 {
+            font: italic bold 2.5em Lora; 
+            color: #ffffff;
+            margin: 0;
+        }
+        
+        h2 {
+            font: 0.8em Arial;
+            color: #ffffff;
+            margin-top: 1.2em;
+            margin-bottom: 0.3em;
+        }
+
+        h3 {
+            font: 0.7em Arial;
+            color: #ffffff;
+            margin-top: 1.2em;
+            margin-bottom: 0.3em;
+        }
+        
+        p {
+            margin-top: 1.2em;
+            margin-bottom: 0.3em;
+            font: 0.7em Arial;
+            color: #ffffff;
+        }
+
+        controls {
+            width:280px;
+            height: 400px;
+            position: absolute;
+            left: 200px;
+            top: 50px;
+            padding: 20px;
+            background: #373839;
+        }
+        a {
+            color:#38aecc;
+        }
+    </style>
+   
+</head>
+
+
+
+
+
+<body>
+
+<!-- initiate HTML5 sliders and color picker -->
+<controls>
+    <h1> Three-tify </h1>
+    <h2> Welcome to our visualisation!<br></h2><h3> Before heading to the main dashboard, on the right side, you'll see a spinning globe with markers. The size of the markers represent the magnitude of <strong>terrorist attacks</strong> that occurred between 1985 to 2015.</h3>
+    <h3> <i>You can toggle the sliders below to make adjustments to the visualisation</i> </h3>
+    <p> Rotation speed & direction</p>
+    <input id="rotation" type="range" min="-0.1" max="0.1" step="0.005" value="0.015" style="width: 140px"/>
+
+    <p> Glow opacity</p>
+    <input id="glow" type="range" min="0.05" max="0.5" step="0.01" value="0.5" style="width: 140px"/>
+
+    <p> Color </p>
+    <input id="color" type="color" value="#ffc857">
+</controls>
+
+<svg width="820" height="620"></svg>
+
+<script>
+    // Map configuration
+    var width  = 820;
+    var height = 620;
+    var rScale = d3.scale.sqrt();
+
+
+    //people = attacks
+    var peoplePerPixel = 5;
+    var max_population = [];
+
+
+
+    // Configuration for the spinning effect
+    var time = Date.now();
+    var rotate = [0, 0];
+    var velocity = [.015, -0];
+
+    // set projection type and parameters
+    var projection = d3.geo.orthographic()
+            .scale(300)
+            .translate([(width / 2) + 100, height / 2])
+            .clipAngle(90)
+            .precision(0.3);
+
+    // create path variable, empty svg element and group container
+    var path = d3.geo.path()
+            .projection(projection);
+    var svg = d3.select("svg");
+    var g = svg.append("g");
+
+    // drawing dark grey sphere as landmass
+    g.append("path")
+            .datum({type: "Sphere"})
+            .attr("class", "sphere")
+            .attr("d", path)
+            .attr("fill", "#1a1a1a");
+
+    // loading city locations from geoJSON
+
+    d3.json("./attacks_and_borders.geojson", function(error, datas) {
+        console.log(datas)
+        var data={};
+        data.type="FeatureCollection"
+        data.crs={type: "name", properties: {name: "urn:ogc:def:crs:OGC:1.3:CRS84" } }
+        data.features=[]
+        for(i in datas)
+        {
+            i=datas[i];
+            var line={}
+            line.type="Feature"
+            line.properties={attack: i.attacks}
+            line.geometry={type:"Point",coordinates:[i.latitude, i.longitude]}
+            data.features.push(line);
+        }
+        console.log(data);
+        // Handle errors getting and parsing the data
+        if (error) { return error; }
+
+        // setting the circle size (not radius!) according to the number of inhabitants per city
+        population_array = [];
+        for (i = 0; i < data.features.length; i++) {
+            population_array.push(data.features[i].properties.attack);
+        }
+        max_population = population_array.sort(d3.descending)[0]
+        var rMin = 0;
+        var rMax = Math.sqrt(max_population / (peoplePerPixel * Math.PI));
+        rScale.domain([0, max_population]);
+        rScale.range([rMin, rMax]);
+
+        path.pointRadius(function(d) {
+            return d.properties ? rScale(d.properties.attack) : 1;
+
+        });
+
+        // Drawing transparent circle markers for cities
+        g.selectAll("path.cities").data(data.features)
+                .enter().append("path")
+                .attr("class", "cities")
+                .attr("d", path)
+                .attr("fill", "#ffc857")
+                .attr("fill-opacity", 0.5);
+
+        // start spinning!
+        spinning_globe();
+    });
+
+    function spinning_globe(){
+        d3.timer(function() {
+
+            // get current time
+            var dt = Date.now() - time;
+
+            // get the new position from modified projection function
+            projection.rotate([rotate[0] + velocity[0] * dt, rotate[1] + velocity[1] * dt]);
+
+            // update cities position = redraw
+            svg.selectAll("path.cities").attr("d", path);
+        });
+
+    }
+
+    // Events for sliders and button
+    document.getElementById("rotation").addEventListener("change", function() {
+        var new_speed = this.value;
+        velocity[0] = new_speed
+    });
+
+    document.getElementById("glow").addEventListener("change", function() {
+        var new_glow = this.value;
+        g.selectAll("path.cities")
+                .attr("fill-opacity", new_glow);
+    });
+
+    document.getElementById("marker_size").addEventListener("change", function() {
+        var new_marker_size = 1 / this.value ;
+        peoplePerPixel = new_marker_size * 100000;
+        var rMin = 0;
+        var rMax = Math.sqrt(max_population / (peoplePerPixel * Math.PI));
+        rScale.range([rMin, rMax]);
+    });
+
+    document.getElementById("color").addEventListener("change", function() {
+        var new_color = this.value;
+        g.selectAll("path.cities")
+                .attr("fill", new_color);
+    });
+
+    // hackish approach to get bl.ocks.org to display individual height
+    d3.select(self.frameElement).style("height", height + "px");
+
+</script>    
+
+<h2> <a href="https://threetify.github.io/visualisation">Click here</a> to view our main visualisation</h2>
+</body>
+</html>
